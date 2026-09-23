@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Tracker</title>
+<style>
+  :root{
+    --bg:#0f1115; --surface:#171a21; --line:#262b35; --text:#e8eaed;
+    --dim:#8b93a3; --accent:#5b8def; --danger:#e5584f; --ok:#3fb87f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);}
+  .top{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:16px;justify-content:space-between;}
+  .top h1{font-size:16px;font-weight:700;}
+  .token-row{display:flex;gap:8px;align-items:center;}
+  input[type=password],input[type=text],select{
+    background:var(--surface);border:1px solid var(--line);border-radius:6px;
+    color:var(--text);padding:6px 10px;font-size:13px;outline:none;
+  }
+  button{background:var(--accent);border:none;border-radius:6px;color:#fff;padding:6px 12px;
+    font-size:13px;font-weight:600;cursor:pointer;}
+  button:hover{filter:brightness(1.1);}
+  button.ghost{background:var(--surface);border:1px solid var(--line);color:var(--text);}
+  .stats{display:flex;gap:12px;padding:16px 20px;flex-wrap:wrap;}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px;min-width:120px;}
+  .stat .n{font-size:22px;font-weight:700;}
+  .stat .l{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+  .filters{display:flex;gap:8px;padding:0 20px 12px;}
+  .list{padding:0 20px;display:flex;flex-direction:column;gap:8px;}
+  .group{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;cursor:pointer;}
+  .group:hover{border-color:var(--accent);}
+  .group-top{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .lang-badge{font-size:10px;font-weight:700;background:var(--line);padding:2px 8px;border-radius:10px;text-transform:uppercase;color:var(--dim);}
+  .msg{font-weight:600;font-size:13.5px;margin-top:6px;}
+  .meta{color:var(--dim);font-size:11.5px;margin-top:4px;}
+  .count-badge{background:var(--danger);color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:10px;}
+  .resolved .count-badge{background:var(--ok);}
+  #detail{display:none;padding:16px 20px 40px;}
+  #detail.show{display:block;}
+  .back{color:var(--accent);cursor:pointer;font-size:13px;margin-bottom:12px;display:inline-block;}
+  pre{background:#0a0c10;border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;}
+  .suggestion{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:14px;white-space:pre-wrap;font-size:13.5px;line-height:1.5;}
+  .empty{color:var(--dim);text-align:center;padding:40px;font-size:13px;}
+  .row{display:flex;gap:8px;margin-top:12px;}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <h1>🐞 Error Tracker</h1>
+  <div class="token-row">
+    <input type="password" id="tokenInput" placeholder="Dashboard token">
+    <button onclick="connect()">Connect</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <div class="stats" id="stats"></div>
+  <div class="filters">
+    <select id="langFilter" onchange="loadGroups()">
+      <option value="">All languages</option>
+      <option value="javascript">JavaScript</option>
+      <option value="python">Python</option>
+      <option value="cpp">C++</option>
+      <option value="c">C</option>
+      <option value="html">HTML</option>
+    </select>
+    <select id="resolvedFilter" onchange="loadGroups()">
+      <option value="0">Open</option>
+      <option value="1">Resolved</option>
+      <option value="">All</option>
+    </select>
+    <button class="ghost" onclick="loadGroups();loadStats()">Refresh</button>
+  </div>
+  <div class="list" id="list"></div>
+
+  <div id="detail">
+    <span class="back" onclick="closeDetail()">&larr; Back to list</span>
+    <div id="detailBody"></div>
+  </div>
+</div>
+
+<script>
+let TOKEN = localStorage.getItem("tracker_token") || "";
+if (TOKEN) document.getElementById("tokenInput").value = TOKEN;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", "x-tracker-token": TOKEN, ...(opts.headers||{}) }
+  });
+  return res.json();
+}
+
+function connect() {
+  TOKEN = document.getElementById("tokenInput").value.trim();
+  if (!TOKEN) return;
+  localStorage.setItem("tracker_token", TOKEN);
+  document.getElementById("app").style.display = "block";
+  loadStats();
+  loadGroups();
+}
+if (TOKEN) connect();
+
+async function loadStats() {
+  const d = await api("/api/stats");
+  if (!d.success) return;
+  document.getElementById("stats").innerHTML = `
+    <div class="stat"><div class="n">${d.totalEvents}</div><div class="l">Total events</div></div>
+    <div class="stat"><div class="n">${d.openGroups}</div><div class="l">Open issues</div></div>
+    ${d.byLanguage.map(l => `<div class="stat"><div class="n">${l.count}</div><div class="l">${l.language}</div></div>`).join("")}
+  `;
+}
+
+async function loadGroups() {
+  const lang = document.getElementById("langFilter").value;
+  const resolved = document.getElementById("resolvedFilter").value;
+  const params = new URLSearchParams();
+  if (lang) params.set("language", lang);
+  if (resolved !== "") params.set("resolved", resolved);
+  const d = await api("/api/groups?" + params.toString());
+  const list = document.getElementById("list");
+  if (!d.success || !d.groups.length) {
+    list.innerHTML = `<div class="empty">No errors here. Either nothing's broken, or nothing's reporting yet.</div>`;
+    return;
+  }
+  list.innerHTML = d.groups.map(g => `
+    <div class="group ${g.resolved ? 'resolved' : ''}" onclick="openDetail('${g.fingerprint}')">
+      <div class="group-top">
+        <span class="lang-badge">${escapeHtml(g.language)}</span>
+        <span class="count-badge">${g.count}×</span>
+      </div>
+      <div class="msg">${escapeHtml(g.message)}</div>
+      <div class="meta">Last seen ${new Date(g.last_seen).toLocaleString()} · Project: ${escapeHtml(g.project)}</div>
+    </div>
+  `).join("");
+}
+
+async function openDetail(fp) {
+  const d = await api("/api/groups/" + fp);
+  if (!d.success) return;
+  document.getElementById("list").parentElement.querySelectorAll(".stats,.filters,.list").forEach(el => el.style.display = "none");
+  const detail = document.getElementById("detail");
+  detail.classList.add("show");
+
+  const latest = d.occurrences[0];
+  detail.dataset.fp = fp;
+  document.getElementById("detailBody").innerHTML = `
+    <div class="lang-badge">${escapeHtml(latest.language)}</div>
+    <h2 style="margin-top:8px;font-size:18px">${escapeHtml(latest.message)}</h2>
+    <div class="meta" style="margin-top:6px">
+      Seen ${d.group.count} time(s) &middot; first ${new Date(d.group.first_seen).toLocaleString()}
+      &middot; last ${new Date(d.group.last_seen).toLocaleString()}
+    </div>
+    ${latest.file ? `<div class="meta">${escapeHtml(latest.file)}${latest.line ? ':' + latest.line : ''}</div>` : ""}
+    <pre>${escapeHtml(latest.stack || "(no stack trace provided)")}</pre>
+
+    <div class="row">
+      <button onclick="resolve('${fp}')">${d.group.resolved ? "Reopen" : "Mark resolved"}</button>
+      <button class="ghost" onclick="getSuggestion('${fp}', false)">Get fix suggestion</button>
+    </div>
+
+    <div id="suggestionBox">
+      ${d.suggestion ? `<div class="suggestion">${escapeHtml(d.suggestion.suggestion)}</div>` : ""}
+    </div>
+
+    <h3 style="margin-top:24px;font-size:13px;color:var(--dim);text-transform:uppercase">Recent occurrences (${d.occurrences.length})</h3>
+    ${d.occurrences.slice(0,10).map(o => `
+      <div class="meta" style="margin-top:6px">${new Date(o.created_at).toLocaleString()} ${o.context ? '&middot; ' + escapeHtml(o.context.slice(0,120)) : ''}</div>
+    `).join("")}
+  `;
+}
+
+function closeDetail() {
+  document.getElementById("detail").classList.remove("show");
+  document.querySelectorAll(".stats,.filters,.list").forEach(el => el.style.display = "");
+}
+
+async function resolve(fp) {
+  await api(`/api/groups/${fp}/resolve`, { method: "POST" });
+  openDetail(fp);
+  loadGroups();
+}
+
+async function getSuggestion(fp, refresh) {
+  const box = document.getElementById("suggestionBox");
+  box.innerHTML = `<div class="meta">Thinking…</div>`;
+  const d = await api(`/api/groups/${fp}/suggest${refresh ? '?refresh=1' : ''}`, { method: "POST" });
+  if (!d.success) {
+    box.innerHTML = `<div class="meta" style="color:var(--danger)">${escapeHtml(d.error || "Failed")}</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="suggestion">${escapeHtml(d.suggestion)}</div>
+    <button class="ghost" style="margin-top:8px" onclick="getSuggestion('${fp}', true)">Regenerate</button>`;
+}
+
+function escapeHtml(t){ return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+</script>
+</body>
+</html>
